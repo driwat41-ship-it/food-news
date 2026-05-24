@@ -20,7 +20,7 @@ import { useI18n } from "./i18n";
   TrendingUp,
   Utensils,
   X,
-  Menu
+  Menu,
 } from "lucide-react";
 import { createIntelligenceData, regions } from "./data/mockData";
 import { fetchLiveIntelligenceData } from "./data/liveData";
