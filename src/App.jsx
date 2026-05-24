@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Bot,
@@ -22,25 +22,65 @@ import {
   X,
   Menu
 } from "lucide-react";
-import { categories, createIntelligenceData, platforms, regions } from "./data/mockData";
+import { createIntelligenceData, regions } from "./data/mockData";
+import { fetchLiveIntelligenceData } from "./data/liveData";
+import { useI18n } from "./i18n.jsx";
 
 const navItems = [
-  ["Overview", "overview", BarChart3],
-  ["News Intel", "news", Newspaper],
-  ["Social Radar", "social", Share2],
-  ["Countries", "countries", Globe2],
-  ["Brands", "brands", Building2],
-  ["TikTok Trends", "tiktok", Flame],
-  ["AI Analysis", "ai", Bot]
+  ["nav_overview", "overview", BarChart3],
+  ["nav_news", "news", Newspaper],
+  ["nav_social", "social", Share2],
+  ["nav_countries", "countries", Globe2],
+  ["nav_brands", "brands", Building2],
+  ["nav_tiktok", "tiktok", Flame],
+  ["nav_ai", "ai", Bot]
 ];
 
 function App() {
-  const data = useMemo(createIntelligenceData, []);
+  const { t, lang, setLang } = useI18n();
+  const baseData = useMemo(createIntelligenceData, []);
+  const [liveData, setLiveData] = useState(null);
+  const [loadingLive, setLoadingLive] = useState(false);
   const [dark, setDark] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [region, setRegion] = useState("All Regions");
   const [query, setQuery] = useState("");
   const [period, setPeriod] = useState("Month");
+
+
+  useEffect(() => {
+    let active = true;
+    const loadLiveData = async () => {
+      setLoadingLive(true);
+      try {
+        const latest = await fetchLiveIntelligenceData();
+        if (active) setLiveData(latest);
+      } catch (error) {
+        console.error("Live data load failed", error);
+      } finally {
+        if (active) setLoadingLive(false);
+      }
+    };
+
+    loadLiveData();
+    const timer = setInterval(loadLiveData, 60 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const data = useMemo(() => ({
+    ...baseData,
+    ...(liveData
+      ? {
+          news: liveData.news,
+          trendSeries: liveData.trendSeries,
+          socialSeries: liveData.socialSeries,
+          aiInsights: liveData.aiInsights
+        }
+      : {})
+  }), [baseData, liveData]);
 
   const countryOptions = region === "All Regions" ? data.countryData : data.countryData.filter((item) => item.region === region);
   const filteredCountries = countryOptions.filter((item) => item.country.toLowerCase().includes(query.toLowerCase()));
@@ -81,8 +121,8 @@ function App() {
                   <Menu size={18} />
                 </button>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.28em] text-zinc-500">Global F&B AI Intelligence</p>
-                  <h1 className="text-xl font-semibold tracking-normal md:text-2xl">Industry Signal Dashboard</h1>
+                  <p className="text-xs uppercase tracking-[0.28em] text-zinc-500">{t("app_subtitle")}</p>
+                  <h1 className="text-xl font-semibold tracking-normal md:text-2xl">{t("app_title")}</h1>
                 </div>
               </div>
               <div className="flex flex-1 items-center justify-end gap-2 md:flex-none">
@@ -91,10 +131,16 @@ function App() {
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search brand, country, news, keyword"
+                    placeholder={t("search_placeholder")}
                     className="min-w-0 flex-1 bg-transparent text-zinc-900 outline-none placeholder:text-zinc-500 dark:text-white"
                   />
                 </div>
+                <button
+                  className="rounded-xl border border-zinc-200 bg-white px-3 text-xs dark:border-white/10 dark:bg-white/5"
+                  onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+                >
+                  {t("lang_label")}: {lang === "zh" ? "中文" : "English"}
+                </button>
                 <button
                   className="grid size-10 place-items-center rounded-xl border border-zinc-200 bg-white dark:border-white/10 dark:bg-white/5"
                   aria-label="Toggle dark mode"
@@ -108,43 +154,41 @@ function App() {
 
           <div className="space-y-5 px-4 py-5 md:px-6">
             <section id="overview" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <StatCard title="News Signals" value={formatNumber(totals.news)} change="+24.8%" icon={Newspaper} />
-              <StatCard title="Social Reach" value={formatNumber(totals.reach)} change="+31.2%" icon={Share2} />
-              <StatCard title="Active Markets" value={totals.markets} change="9 regions" icon={Globe2} />
-              <StatCard title="Brands Tracked" value={totals.brands} change="20 watchlist" icon={Building2} />
+              {liveData && (
+                <div className="md:col-span-2 xl:col-span-4 rounded-2xl border border-zinc-200 bg-white/80 p-3 text-xs text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300">
+                  Live sync: {new Date(liveData.lastUpdated).toLocaleString()} · {loadingLive ? "updating..." : "stable"} · {liveData.sourceStatus.map((s) => `${s.source}:${s.count}`).join(" | ")}
+                </div>
+              )}
+              <StatCard title={t("stats_news")} value={formatNumber(totals.news)} change="+24.8%" icon={Newspaper} />
+              <StatCard title={t("stats_reach")} value={formatNumber(totals.reach)} change="+31.2%" icon={Share2} />
+              <StatCard title={t("stats_markets")} value={totals.markets} change="9 regions" icon={Globe2} />
+              <StatCard title={t("stats_brands")} value={totals.brands} change="20 watchlist" icon={Building2} />
             </section>
 
             <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
               <Panel
-                title="Global Industry Trend"
-                subtitle="Tea, coffee, QSR, snack chain and overseas franchise expansion signals."
+                title={t("panel_trend")}
+                subtitle="Tea, coffee, fried chicken and chain restaurant global trend signals (hourly refreshed)."
                 action={<Segmented value={period} options={["Week", "Month"]} onChange={setPeriod} />}
               >
                 <LineChart data={period === "Month" ? data.trendSeries : data.trendSeries.slice(-7)} />
               </Panel>
-              <Panel title="Category Signal Mix" subtitle="重点监测品类热度分布">
+              <Panel title={t("panel_mix")} subtitle="重点监测品类热度分布">
                 <DonutChart
-                  data={[
-                    ["Tea", 28],
-                    ["Coffee", 20],
-                    ["Fried Chicken", 18],
-                    ["Snack", 15],
-                    ["Bakery", 11],
-                    ["Dessert", 8]
-                  ]}
+                  data={liveData?.categoryCounts || [[t("tea"), 28],[t("coffee"), 20],[t("fried"), 18],[t("chain"), 34]]}
                 />
               </Panel>
             </section>
 
             <section id="news" className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-              <Panel title="Global News Aggregation" subtitle="Google News / RSS / Reddit / Industry Media / Google Trends">
+              <Panel title={t("panel_news")} subtitle="Google News / Reddit / X / TikTok / YouTube / Facebook / Instagram | Real-time ingest">
                 <div className="space-y-3">
                   {filteredNews.map((item) => (
-                    <NewsRow key={`${item.title}-${item.time}`} item={item} />
+                    <NewsRow key={`${item.title}-${item.time}`} item={item} originalLabel={t("original")} />
                   ))}
                 </div>
               </Panel>
-              <Panel title="AI Daily Summary" subtitle="自动总结每日重点新闻、趋势和 AI Insight">
+              <Panel title={t("panel_ai_daily")} subtitle="自动总结每日重点新闻、趋势和 AI Insight">
                 <div className="space-y-3">
                   {data.aiInsights.map((insight, index) => (
                     <div key={insight} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-white/10 dark:bg-black/24">
@@ -261,6 +305,7 @@ function App() {
 }
 
 function Sidebar({ onClose }) {
+  const { t } = useI18n();
   return (
     <div className="flex h-full flex-col">
       <div className="mb-7 flex items-center justify-between">
@@ -280,7 +325,7 @@ function Sidebar({ onClose }) {
       <nav className="space-y-1">
         {navItems.map(([label, id, Icon], index) => (
           <a
-            key={label}
+            key={t(label)}
             href={`#${id}`}
             onClick={onClose}
             className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition ${
@@ -290,7 +335,7 @@ function Sidebar({ onClose }) {
             }`}
           >
             <Icon size={18} />
-            {label}
+            {t(label)}
           </a>
         ))}
       </nav>
@@ -413,7 +458,7 @@ function DonutChart({ data }) {
         {data.map(([label, value], index) => {
           const circle = (
             <circle
-              key={label}
+              key={t(label)}
               cx="21"
               cy="21"
               r="15.915"
@@ -430,8 +475,8 @@ function DonutChart({ data }) {
       </svg>
       <div className="space-y-3">
         {data.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between text-sm">
-            <span className="text-zinc-500">{label}</span>
+          <div key={t(label)} className="flex items-center justify-between text-sm">
+            <span className="text-zinc-500">{t(label)}</span>
             <span className="font-medium">{value}%</span>
           </div>
         ))}
@@ -440,7 +485,7 @@ function DonutChart({ data }) {
   );
 }
 
-function NewsRow({ item }) {
+function NewsRow({ item, originalLabel }) {
   return (
     <article className="rounded-2xl border border-zinc-200 p-4 transition hover:-translate-y-0.5 hover:bg-zinc-50 dark:border-white/10 dark:hover:bg-white/[0.03]">
       <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
@@ -450,7 +495,8 @@ function NewsRow({ item }) {
         <span>/</span>
         <span>{item.time}</span>
       </div>
-      <h3 className="mt-2 font-medium">{item.title}</h3>
+      <h3 className="mt-2 font-medium">{item.translatedTitle || item.title}</h3>
+      {item.link && <a href={item.link} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-zinc-500 underline">{originalLabel}</a>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{item.category}</span>
         <span className="rounded-full bg-black px-3 py-1 text-xs text-white dark:bg-white dark:text-black">Heat {item.heat}</span>
@@ -488,7 +534,7 @@ function PlatformCard({ item }) {
 function Metric({ label, value }) {
   return (
     <div>
-      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="text-xs text-zinc-500">{t(label)}</p>
       <p className="mt-1 font-medium">{value}</p>
     </div>
   );
