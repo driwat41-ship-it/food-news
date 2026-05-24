@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useI18n } from "./i18n";
 
 import {
   BarChart3,
