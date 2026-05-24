@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+
 import {
   BarChart3,
   Bot,
@@ -22,9 +23,10 @@ import {
   X,
   Menu,
 } from "lucide-react";
+
 import { createIntelligenceData, regions } from "./data/mockData";
 import { fetchLiveIntelligenceData } from "./data/liveData";
-import { useI18n } from "./i18n.jsx";
+import { useI18n } from "./i18n.jsx";;
 
 const navItems = [
   ["nav_overview", "overview", BarChart3],
