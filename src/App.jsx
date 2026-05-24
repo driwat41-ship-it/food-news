@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
+import { useI18n } from "./i18n";
   BarChart3,
   Bot,
   Building2,
@@ -450,6 +450,7 @@ function BarChart({ data }) {
 }
 
 function DonutChart({ data }) {
+  const { t } = useI18n();
   let offset = 25;
   return (
     <div className="grid gap-5 md:grid-cols-[190px_1fr] md:items-center xl:grid-cols-1">
@@ -532,6 +533,7 @@ function PlatformCard({ item }) {
 }
 
 function Metric({ label, value }) {
+  const { t } = useI18n();
   return (
     <div>
       <p className="text-xs text-zinc-500">{t(label)}</p>
