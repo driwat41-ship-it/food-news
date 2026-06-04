@@ -1,0 +1,5 @@
+import Link from "next/link";
+
+export function SiteFooter() {
+  return <footer className="mt-16 border-t border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950"><div className="mx-auto grid max-w-7xl gap-6 px-4 py-10 md:grid-cols-4"><div><h2 className="font-black text-slate-950 dark:text-white">Global Food & Beverage Intelligence</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-400">Multilingual market intelligence for tea, bubble tea, coffee, restaurant chains, QSR, and FMCG.</p></div>{[["Platform", ["News", "Brands", "Countries"]], ["Insights", ["Categories", "Reports", "Search"]], ["Coverage", ["Tea", "Bubble Tea", "Coffee"]]].map(([title, links]) => <div key={String(title)}><h3 className="text-sm font-semibold uppercase tracking-wide text-slate-900 dark:text-white">{String(title)}</h3><div className="mt-3 grid gap-2 text-sm text-slate-500 dark:text-slate-400">{(links as string[]).map((link) => <Link key={link} href={`/${link.toLowerCase().replaceAll(" ", "-")}`} className="hover:text-emerald-700">{link}</Link>)}</div></div>)}</div></footer>;
+}

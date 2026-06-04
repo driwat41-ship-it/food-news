@@ -1,0 +1,1174 @@
+// Global Food & Beverage Intelligence — Production Prisma Schema
+// PostgreSQL schema designed for multilingual food and beverage intelligence at scale.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext, pgcrypto, pg_trgm, vector]
+}
+
+/// Application-level role values used for RBAC, audit trails, API access, and admin authorization.
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+  ANALYST
+  CONTRIBUTOR
+  MEMBER
+  API_CLIENT
+}
+
+/// Editorial and ingestion lifecycle for news records.
+enum NewsStatus {
+  DRAFT
+  INGESTED
+  PROCESSING
+  REVIEW
+  PUBLISHED
+  ARCHIVED
+  REJECTED
+  DUPLICATE
+}
+
+/// Lifecycle for queued background jobs and individual job executions.
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  RETRYING
+  CANCELLED
+  SKIPPED
+}
+
+/// Supported content languages for source ingestion, translations, search facets, and localization.
+enum Language {
+  EN
+  ZH
+  JA
+  KO
+  ES
+  FR
+  DE
+  IT
+  PT
+  NL
+  ID
+  MS
+  TH
+  VI
+  HI
+  AR
+  TR
+  RU
+  OTHER
+}
+
+/// Core industries and sectors covered by the intelligence platform.
+enum IndustryType {
+  TEA
+  BUBBLE_TEA
+  COFFEE
+  RESTAURANT_CHAINS
+  QSR
+  FMCG
+  BEVERAGE
+  FOOD_SERVICE
+  RETAIL
+  OTHER
+}
+
+/// Social platforms supported by the social listening and trend intelligence layer.
+enum SocialPlatform {
+  X
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  LINKEDIN
+  YOUTUBE
+  REDDIT
+  WECHAT
+  WEIBO
+  LINE
+  TELEGRAM
+  OTHER
+}
+
+/// Users represent platform members, administrators, analysts, editors, and API clients.
+model User {
+  id                   String             @id @default(uuid()) @db.Uuid
+  email                String             @unique @db.Citext
+  name                 String?
+  image                String?
+  role                 UserRole           @default(MEMBER)
+  roleId               String?            @db.Uuid
+  roleRecord           Role?              @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  locale               Language           @default(EN)
+  timezone             String             @default("UTC")
+  isActive             Boolean            @default(true)
+  lastLoginAt          DateTime?
+  savedSearches        SavedSearch[]
+  watchlists           Watchlist[]
+  notifications        Notification[]
+  apiKeys              APIKey[]
+  searchQueries        SearchQuery[]
+  auditLogs            AuditLog[]         @relation("AuditActor")
+  createdJobs          SystemJob[]        @relation("SystemJobCreator")
+  aiProcessingLogs     AIProcessingLog[]  @relation("AIProcessingRequestedBy")
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([role])
+  @@index([roleId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+/// Roles provide optional database-managed RBAC metadata in addition to the UserRole enum.
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        UserRole @unique
+  description String?
+  permissions Json     @default("{}")
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// News is the canonical article entity optimized for deduplication, SEO, AI enrichment, and large-scale search.
+model News {
+  id                     String              @id @default(uuid()) @db.Uuid
+  sourceId               String?             @db.Uuid
+  source                 Source?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  categoryId             String?             @db.Uuid
+  category               Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  primaryCountryId       String?             @db.Uuid
+  primaryCountry         Country?            @relation("PrimaryNewsCountry", fields: [primaryCountryId], references: [id], onDelete: SetNull)
+  primaryBrandId         String?             @db.Uuid
+  primaryBrand           Brand?              @relation("PrimaryNewsBrand", fields: [primaryBrandId], references: [id], onDelete: SetNull)
+  title                  String
+  slug                   String              @unique
+  canonicalUrl           String?             @unique
+  originalUrl            String?
+  urlHash                String              @unique
+  contentHash            String?
+  excerpt                String?
+  body                   String?
+  author                 String?
+  imageUrl               String?
+  language               Language            @default(EN)
+  status                 NewsStatus          @default(INGESTED)
+  industryType           IndustryType?
+  publishedAt            DateTime?
+  ingestedAt             DateTime            @default(now())
+  aiSummary              String?
+  aiSummaryModel         String?
+  aiSummaryGeneratedAt   DateTime?
+  aiProcessedAt          DateTime?
+  aiReviewStatus         String              @default("pending_review")
+  aiConfidenceScore      Float?
+  aiKeywords             String[]            @default([])
+  aiEntities             Json                @default("{}")
+  sentimentScore         Float?
+  relevanceScore         Float?
+  qualityScore           Float?
+  duplicateOfId          String?             @db.Uuid
+  duplicateOf            News?               @relation("NewsDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates             News[]              @relation("NewsDuplicates")
+  searchVector           Unsupported("tsvector")?
+  embedding              Unsupported("vector(1536)")?
+  translations           NewsTranslation[]
+  tags                   NewsTag[]
+  brandMentions          BrandMention[]
+  countryMentions        CountryMention[]
+  socialPosts            SocialPost[]
+  fundingEvents          FundingEvent[]
+  productLaunches        ProductLaunch[]
+  trends                 Trend[]
+  franchiseOpportunities FranchiseOpportunity[]
+  storeExpansions        StoreExpansion[]
+  marketReports          MarketReport[]
+  aiProcessingLogs       AIProcessingLog[]
+  dailyReports           DailyReportNews[]
+  weeklyReports          WeeklyReportNews[]
+  monthlyReports         MonthlyReportNews[]
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  @@index([publishedAt])
+  @@index([sourceId])
+  @@index([categoryId])
+  @@index([primaryCountryId])
+  @@index([primaryBrandId])
+  @@index([language])
+  @@index([slug])
+  @@index([status, publishedAt])
+  @@index([industryType, publishedAt])
+  @@index([sourceId, publishedAt])
+  @@index([categoryId, publishedAt])
+  @@index([primaryCountryId, publishedAt])
+  @@index([primaryBrandId, publishedAt])
+  @@index([duplicateOfId])
+  @@index([contentHash])
+  @@index([searchVector], type: Gin)
+  @@index([embedding], type: Hnsw)
+}
+
+/// NewsTranslation stores localized titles, slugs, metadata, summaries, and bodies for multilingual SEO.
+model NewsTranslation {
+  id                   String    @id @default(uuid()) @db.Uuid
+  newsId               String    @db.Uuid
+  news                 News      @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  language             Language
+  title                String
+  slug                 String
+  excerpt              String?
+  body                 String?
+  metaTitle            String?
+  metaDescription      String?
+  aiSummary            String?
+  keyTakeaways         String[]  @default([])
+  reviewStatus         String    @default("pending_review")
+  translationModel     String?
+  translatedAt         DateTime?
+  qualityScore         Float?
+  searchVector         Unsupported("tsvector")?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([newsId, language])
+  @@unique([language, slug])
+  @@index([newsId])
+  @@index([language])
+  @@index([slug])
+  @@index([language, slug])
+  @@index([searchVector], type: Gin)
+}
+
+/// Sources represent RSS feeds, publishers, social feeds, APIs, and other content origins.
+model Source {
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String          @unique
+  url             String?         @unique
+  homepageUrl     String?
+  feedUrl         String?         @unique
+  language        Language        @default(EN)
+  countryId       String?         @db.Uuid
+  country         Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  categoryId      String?         @db.Uuid
+  category        Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  industryType    IndustryType?
+  active          Boolean         @default(true)
+  isActive        Boolean         @default(true)
+  trustScore       Float           @default(0)
+  reliabilityScore Float           @default(0)
+  priority         Int             @default(50)
+  crawlInterval    Int             @default(60)
+  notes            String?
+  lastFetchedAt   DateTime?
+  lastCrawledAt   DateTime?
+  lastSuccessAt   DateTime?
+  failureCount    Int             @default(0)
+  successCount    Int             @default(0)
+  errorCount      Int             @default(0)
+  failureReason   String?
+  news            News[]
+  socialSources   SocialSource[]
+  jobExecutions   JobExecution[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([slug])
+  @@index([language])
+  @@index([countryId])
+  @@index([categoryId])
+  @@index([industryType])
+  @@index([priority])
+  @@index([reliabilityScore])
+  @@index([active, lastFetchedAt])
+  @@index([isActive, lastCrawledAt])
+}
+
+/// Brands represent chains, QSR operators, FMCG companies, tea, bubble tea, coffee, and beverage brands.
+model Brand {
+  id                     String                 @id @default(uuid()) @db.Uuid
+  name                   String
+  slug                   String                 @unique
+  aliases                String[]               @default([])
+  description            String?
+  websiteUrl             String?
+  logoUrl                String?
+  headquartersCountryId  String?                @db.Uuid
+  headquartersCountry    Country?               @relation("BrandHeadquartersCountry", fields: [headquartersCountryId], references: [id], onDelete: SetNull)
+  categoryId             String?                @db.Uuid
+  category               Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  industryType           IndustryType
+  foundedYear            Int?
+  isPublic               Boolean?
+  stockTicker            String?
+  parentBrandId          String?                @db.Uuid
+  parentBrand            Brand?                 @relation("BrandHierarchy", fields: [parentBrandId], references: [id], onDelete: SetNull)
+  childBrands            Brand[]                @relation("BrandHierarchy")
+  primaryNews            News[]                 @relation("PrimaryNewsBrand")
+  mentions               BrandMention[]
+  fundingEvents          FundingEvent[]
+  fundingInvestments     FundingEventInvestor[]
+  productLaunches        ProductLaunch[]
+  franchiseOpportunities FranchiseOpportunity[]
+  storeExpansions        StoreExpansion[]
+  marketReports          MarketReport[]
+  dailyReports           DailyReport[]
+  weeklyReports          WeeklyReport[]
+  monthlyReports         MonthlyReport[]
+  trends                 Trend[]
+  watchlistItems         WatchlistItem[]
+  savedSearches          SavedSearch[]
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  @@index([slug])
+  @@index([name])
+  @@index([categoryId])
+  @@index([headquartersCountryId])
+  @@index([industryType])
+  @@index([parentBrandId])
+}
+
+/// Countries represent markets and geographies used for localization, market intelligence, and country tracking.
+model Country {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  name                  String
+  slug                  String                 @unique
+  iso2                  String                 @unique @db.Char(2)
+  iso3                  String                 @unique @db.Char(3)
+  region                String?
+  subregion             String?
+  currencyCode          String?                @db.Char(3)
+  defaultLanguage       Language               @default(EN)
+  isActive              Boolean                @default(true)
+  sources               Source[]
+  headquarteredBrands   Brand[]                @relation("BrandHeadquartersCountry")
+  primaryNews           News[]                 @relation("PrimaryNewsCountry")
+  mentions              CountryMention[]
+  fundingEvents         FundingEvent[]
+  productLaunches       ProductLaunch[]
+  franchiseOpportunities FranchiseOpportunity[]
+  storeExpansions       StoreExpansion[]
+  marketReports         MarketReport[]
+  dailyReports          DailyReport[]
+  weeklyReports         WeeklyReport[]
+  monthlyReports        MonthlyReport[]
+  socialSources         SocialSource[]
+  fundingInvestors      FundingInvestor[]
+  trends                Trend[]
+  watchlistItems        WatchlistItem[]
+  savedSearches         SavedSearch[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@index([slug])
+  @@index([region])
+  @@index([defaultLanguage])
+  @@index([isActive])
+}
+
+/// Categories define the industry taxonomy and nested sector hierarchy used by news, brands, reports, and search.
+model Category {
+  id             String          @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String          @unique
+  description    String?
+  industryType   IndustryType
+  parentId       String?         @db.Uuid
+  parent         Category?       @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       Category[]      @relation("CategoryTree")
+  news           News[]
+  brands         Brand[]
+  sources        Source[]
+  tags           Tag[]
+  trends         Trend[]
+  marketReports  MarketReport[]
+  dailyReports   DailyReport[]
+  weeklyReports  WeeklyReport[]
+  monthlyReports MonthlyReport[]
+  productLaunches ProductLaunch[]
+  savedSearches  SavedSearch[]
+  watchlistItems WatchlistItem[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([slug])
+  @@index([industryType])
+  @@index([parentId])
+}
+
+/// Tags provide flexible many-to-many labeling for articles, trends, reports, products, and market signals.
+model Tag {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String    @unique
+  categoryId  String?   @db.Uuid
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  news        NewsTag[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([slug])
+  @@index([categoryId])
+}
+
+/// NewsTag is the explicit many-to-many join table between News and Tag for scalable tagging and filtering.
+model NewsTag {
+  newsId    String   @db.Uuid
+  tagId     String   @db.Uuid
+  news      News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([newsId, tagId])
+  @@index([newsId])
+  @@index([tagId])
+}
+
+/// BrandMention tracks article-to-brand mentions, confidence scores, aliases, and AI extraction metadata.
+model BrandMention {
+  id             String   @id @default(uuid()) @db.Uuid
+  newsId         String   @db.Uuid
+  brandId        String   @db.Uuid
+  news           News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  brand          Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  confidence     Float    @default(0)
+  mentionText    String?
+  context        String?
+  source         String   @default("ai")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([newsId, brandId])
+  @@index([newsId])
+  @@index([brandId])
+  @@index([brandId, createdAt])
+}
+
+/// CountryMention tracks country and market references extracted from news for country-level intelligence pages.
+model CountryMention {
+  id             String   @id @default(uuid()) @db.Uuid
+  newsId         String   @db.Uuid
+  countryId      String   @db.Uuid
+  news           News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  country        Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  confidence     Float    @default(0)
+  mentionText    String?
+  context        String?
+  source         String   @default("ai")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([newsId, countryId])
+  @@index([newsId])
+  @@index([countryId])
+  @@index([countryId, createdAt])
+}
+
+/// DailyReport stores generated daily intelligence briefs for sectors, countries, categories, and brands.
+model DailyReport {
+  id              String             @id @default(uuid()) @db.Uuid
+  title           String
+  slug            String             @unique
+  language        Language           @default(EN)
+  summary         String?
+  body            String?
+  industryType    IndustryType?
+  countryId       String?            @db.Uuid
+  country         Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  brandId         String?            @db.Uuid
+  brand           Brand?             @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  categoryId      String?            @db.Uuid
+  category        Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  reportDate      DateTime           @db.Date
+  publishedAt     DateTime?
+  aiModel         String?
+  metrics         Json               @default("{}")
+  news            DailyReportNews[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([reportDate, language, industryType, countryId, brandId, categoryId])
+  @@index([slug])
+  @@index([reportDate])
+  @@index([publishedAt])
+  @@index([language])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([categoryId])
+}
+
+/// WeeklyReport stores generated weekly intelligence briefs and analyst summaries.
+model WeeklyReport {
+  id              String             @id @default(uuid()) @db.Uuid
+  title           String
+  slug            String             @unique
+  language        Language           @default(EN)
+  summary         String?
+  body            String?
+  industryType    IndustryType?
+  countryId       String?            @db.Uuid
+  country         Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  brandId         String?            @db.Uuid
+  brand           Brand?             @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  categoryId      String?            @db.Uuid
+  category        Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  weekStart       DateTime           @db.Date
+  weekEnd         DateTime           @db.Date
+  publishedAt     DateTime?
+  aiModel         String?
+  metrics         Json               @default("{}")
+  news            WeeklyReportNews[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([weekStart, weekEnd, language, industryType, countryId, brandId, categoryId])
+  @@index([slug])
+  @@index([weekStart])
+  @@index([weekEnd])
+  @@index([publishedAt])
+  @@index([language])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([categoryId])
+}
+
+/// MonthlyReport stores generated monthly intelligence reports for deeper market analysis.
+model MonthlyReport {
+  id              String              @id @default(uuid()) @db.Uuid
+  title           String
+  slug            String              @unique
+  language        Language            @default(EN)
+  summary         String?
+  body            String?
+  industryType    IndustryType?
+  countryId       String?             @db.Uuid
+  country         Country?            @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  brandId         String?             @db.Uuid
+  brand           Brand?              @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  categoryId      String?             @db.Uuid
+  category        Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  month           Int
+  year            Int
+  publishedAt     DateTime?
+  aiModel         String?
+  metrics         Json                @default("{}")
+  news            MonthlyReportNews[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([year, month, language, industryType, countryId, brandId, categoryId])
+  @@index([slug])
+  @@index([year, month])
+  @@index([publishedAt])
+  @@index([language])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([categoryId])
+}
+
+/// SocialSource stores configured social accounts, searches, and feeds used for social listening.
+model SocialSource {
+  id             String         @id @default(uuid()) @db.Uuid
+  sourceId       String?        @db.Uuid
+  source         Source?        @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  platform       SocialPlatform
+  handle         String
+  displayName    String?
+  url            String?
+  language       Language       @default(EN)
+  countryId      String?        @db.Uuid
+  country        Country?       @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  isActive       Boolean        @default(true)
+  lastCrawledAt  DateTime?
+  posts          SocialPost[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([platform, handle])
+  @@index([sourceId])
+  @@index([platform])
+  @@index([language])
+  @@index([countryId])
+  @@index([isActive, lastCrawledAt])
+}
+
+/// SocialPost stores social mentions and signals connected to news, brands, trends, and market events.
+model SocialPost {
+  id             String         @id @default(uuid()) @db.Uuid
+  socialSourceId String?        @db.Uuid
+  socialSource   SocialSource?  @relation(fields: [socialSourceId], references: [id], onDelete: SetNull)
+  newsId         String?        @db.Uuid
+  news           News?          @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  platform       SocialPlatform
+  externalId     String
+  url            String?
+  authorHandle   String?
+  content        String?
+  language       Language       @default(EN)
+  postedAt       DateTime?
+  metrics        Json           @default("{}")
+  sentimentScore Float?
+  trendId        String?        @db.Uuid
+  trend          Trend?         @relation(fields: [trendId], references: [id], onDelete: SetNull)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([platform, externalId])
+  @@index([socialSourceId])
+  @@index([newsId])
+  @@index([trendId])
+  @@index([platform])
+  @@index([language])
+  @@index([postedAt])
+}
+
+/// FundingEvent captures fundraising, M&A, investment, IPO, and financing activity linked to brands and markets.
+model FundingEvent {
+  id              String                 @id @default(uuid()) @db.Uuid
+  brandId         String?                @db.Uuid
+  brand           Brand?                 @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  countryId       String?                @db.Uuid
+  country         Country?               @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  newsId          String?                @db.Uuid
+  news            News?                  @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  title           String
+  slug            String                 @unique
+  eventType       String
+  amount          Decimal?               @db.Decimal(20, 2)
+  currency        String?                @db.Char(3)
+  announcedAt     DateTime?
+  summary         String?
+  investors       FundingEventInvestor[]
+  aiReviewStatus  String                 @default("pending_review")
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([slug])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([newsId])
+  @@index([announcedAt])
+}
+
+/// FundingInvestor stores investor entities used across funding events and brand investment histories.
+model FundingInvestor {
+  id          String                 @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String                 @unique
+  websiteUrl  String?
+  countryId   String?                @db.Uuid
+  country     Country?               @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  investorType String?
+  investments FundingEventInvestor[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([slug])
+  @@index([countryId])
+  @@index([investorType])
+}
+
+/// ProductLaunch tracks new products, menus, SKUs, beverages, ingredients, and launch markets.
+model ProductLaunch {
+  id            String                    @id @default(uuid()) @db.Uuid
+  brandId       String?                   @db.Uuid
+  brand         Brand?                    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  countryId     String?                   @db.Uuid
+  country       Country?                  @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  newsId        String?                   @db.Uuid
+  news          News?                     @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  categoryId    String?                   @db.Uuid
+  category      Category?                 @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  title         String
+  slug          String                    @unique
+  description   String?
+  launchDate    DateTime?
+  industryType  IndustryType?
+  ingredients   ProductLaunchIngredient[]
+  aiReviewStatus String                    @default("pending_review")
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  @@index([slug])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([newsId])
+  @@index([categoryId])
+  @@index([launchDate])
+  @@index([industryType])
+}
+
+/// Ingredient stores ingredient and product-component entities for product launches and trend tracking.
+model Ingredient {
+  id              String                    @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String                    @unique
+  description     String?
+  category        String?
+  productLaunches ProductLaunchIngredient[]
+  trends          Trend[]
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([slug])
+  @@index([category])
+}
+
+/// Trend represents persistent market, ingredient, category, brand, or country trends detected from news and social signals.
+model Trend {
+  id             String          @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String          @unique
+  description    String?
+  industryType   IndustryType?
+  categoryId     String?         @db.Uuid
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brandId        String?         @db.Uuid
+  brand          Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  countryId      String?         @db.Uuid
+  country        Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  ingredientId   String?         @db.Uuid
+  ingredient     Ingredient?     @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+  newsId         String?         @db.Uuid
+  news           News?           @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  snapshots      TrendSnapshot[]
+  socialPosts    SocialPost[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([slug])
+  @@index([industryType])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([ingredientId])
+  @@index([newsId])
+}
+
+/// TrendSnapshot stores time-series metrics for trend velocity, volume, sentiment, and geographic spread.
+model TrendSnapshot {
+  id             String   @id @default(uuid()) @db.Uuid
+  trendId        String   @db.Uuid
+  trend          Trend    @relation(fields: [trendId], references: [id], onDelete: Cascade)
+  snapshotAt     DateTime
+  volumeScore    Float    @default(0)
+  velocityScore  Float    @default(0)
+  sentimentScore Float?
+  articleCount   Int      @default(0)
+  socialCount    Int      @default(0)
+  metrics        Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([trendId, snapshotAt])
+  @@index([trendId])
+  @@index([snapshotAt])
+}
+
+/// FranchiseOpportunity stores franchise, licensing, territory, and operator opportunities for restaurant/QSR brands.
+model FranchiseOpportunity {
+  id              String       @id @default(uuid()) @db.Uuid
+  brandId         String?      @db.Uuid
+  brand           Brand?       @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  countryId       String?      @db.Uuid
+  country         Country?     @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  newsId          String?      @db.Uuid
+  news            News?        @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  title           String
+  slug            String       @unique
+  description     String?
+  investmentMin   Decimal?     @db.Decimal(20, 2)
+  investmentMax   Decimal?     @db.Decimal(20, 2)
+  currency        String?      @db.Char(3)
+  availableFrom   DateTime?
+  aiReviewStatus  String       @default("pending_review")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([slug])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([newsId])
+  @@index([availableFrom])
+}
+
+/// StoreExpansion tracks openings, closures, market entries, store-count changes, and expansion signals.
+model StoreExpansion {
+  id              String    @id @default(uuid()) @db.Uuid
+  brandId         String?   @db.Uuid
+  brand           Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  countryId       String?   @db.Uuid
+  country         Country?  @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  newsId          String?   @db.Uuid
+  news            News?     @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  city            String?
+  title           String
+  slug            String    @unique
+  expansionType   String
+  storeCount      Int?
+  announcedAt     DateTime?
+  openedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([slug])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([newsId])
+  @@index([announcedAt])
+  @@index([openedAt])
+}
+
+/// MarketReport stores analyst and AI-assisted evergreen reports by market, category, brand, and sector.
+model MarketReport {
+  id            String       @id @default(uuid()) @db.Uuid
+  title         String
+  slug          String       @unique
+  language      Language     @default(EN)
+  summary       String?
+  body          String?
+  industryType  IndustryType?
+  categoryId    String?      @db.Uuid
+  category      Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brandId       String?      @db.Uuid
+  brand         Brand?       @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  countryId     String?      @db.Uuid
+  country       Country?     @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  newsId        String?      @db.Uuid
+  news          News?        @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  publishedAt   DateTime?
+  aiModel       String?
+  metrics       Json         @default("{}")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([slug])
+  @@index([language])
+  @@index([publishedAt])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([newsId])
+  @@index([industryType])
+}
+
+/// SavedSearch stores user search alerts and reusable faceted queries across articles, brands, markets, and reports.
+model SavedSearch {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String       @db.Uuid
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  query        String
+  filters      Json         @default("{}")
+  language     Language?
+  brandId      String?      @db.Uuid
+  brand        Brand?       @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  countryId    String?      @db.Uuid
+  country      Country?     @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  categoryId   String?      @db.Uuid
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  alertEnabled Boolean      @default(false)
+  lastRunAt    DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([categoryId])
+  @@index([language])
+  @@index([alertEnabled, lastRunAt])
+}
+
+/// Watchlist groups brands, countries, categories, and keywords a user wants to track.
+model Watchlist {
+  id          String          @id @default(uuid()) @db.Uuid
+  userId      String          @db.Uuid
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  items       WatchlistItem[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+/// Notification stores user-visible alerts from saved searches, watchlists, reports, jobs, and system events.
+model Notification {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String
+  title       String
+  body        String?
+  payload     Json      @default("{}")
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+/// AuditLog records administrative and system mutations for compliance, traceability, and incident response.
+model AuditLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  actorId     String?   @db.Uuid
+  actor       User?     @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action      String
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  metadata    Json      @default("{}")
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+/// APIKey stores hashed API credentials for integrations, customers, internal services, and automation clients.
+model APIKey {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  keyHash     String    @unique
+  prefix      String    @unique
+  scopes      String[]  @default([])
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+/// SearchQuery records search activity for analytics, ranking feedback, saved-search suggestions, and product insights.
+model SearchQuery {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String?   @db.Uuid
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  query          String
+  filters        Json      @default("{}")
+  language       Language?
+  resultCount    Int       @default(0)
+  ipHash         String?   @db.VarChar(64)
+  userAgent      String?
+  latencyMs      Int?
+  clickedEntity  String?
+  clickedEntityId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([language])
+  @@index([ipHash])
+  @@index([createdAt])
+}
+
+/// SystemJob defines recurring or ad hoc background jobs such as RSS ingestion, AI enrichment, translations, and reports.
+model SystemJob {
+  id             String         @id @default(uuid()) @db.Uuid
+  name           String
+  key            String         @unique
+  description    String?
+  status         JobStatus      @default(QUEUED)
+  schedule       String?
+  payload        Json           @default("{}")
+  priority       Int            @default(0)
+  createdById    String?        @db.Uuid
+  createdBy      User?          @relation("SystemJobCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  executions     JobExecution[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([key])
+  @@index([status])
+  @@index([priority])
+  @@index([createdById])
+}
+
+/// JobExecution records every execution attempt for system jobs, including retries, errors, runtime metrics, and source context.
+model JobExecution {
+  id             String     @id @default(uuid()) @db.Uuid
+  jobId          String     @db.Uuid
+  job            SystemJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  sourceId       String?    @db.Uuid
+  source         Source?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  status         JobStatus  @default(QUEUED)
+  attempt        Int        @default(1)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  durationMs     Int?
+  recordsRead    Int        @default(0)
+  recordsWritten Int        @default(0)
+  errorMessage   String?
+  errorStack     String?
+  metadata       Json       @default("{}")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([jobId])
+  @@index([sourceId])
+  @@index([status])
+  @@index([startedAt])
+  @@index([finishedAt])
+}
+
+/// AIProcessingLog captures every AI operation for summaries, translations, embeddings, classification, cost tracking, and auditing.
+model AIProcessingLog {
+  id             String    @id @default(uuid()) @db.Uuid
+  newsId         String?   @db.Uuid
+  news           News?     @relation(fields: [newsId], references: [id], onDelete: SetNull)
+  requestedById  String?   @db.Uuid
+  requestedBy    User?     @relation("AIProcessingRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  taskType       String
+  provider       String    @default("openai")
+  model          String
+  promptTokens   Int       @default(0)
+  completionTokens Int     @default(0)
+  totalTokens    Int       @default(0)
+  costUsd        Decimal?  @db.Decimal(12, 6)
+  status         JobStatus @default(QUEUED)
+  inputHash      String?
+  outputHash     String?
+  metadata       Json      @default("{}")
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([newsId])
+  @@index([requestedById])
+  @@index([taskType])
+  @@index([provider, model])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// FundingEventInvestor is the many-to-many join between funding events, investors, and optionally invested brands.
+model FundingEventInvestor {
+  fundingEventId String          @db.Uuid
+  investorId     String          @db.Uuid
+  brandId        String?         @db.Uuid
+  fundingEvent   FundingEvent    @relation(fields: [fundingEventId], references: [id], onDelete: Cascade)
+  investor       FundingInvestor @relation(fields: [investorId], references: [id], onDelete: Cascade)
+  brand          Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  role           String?
+  amount         Decimal?        @db.Decimal(20, 2)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@id([fundingEventId, investorId])
+  @@index([fundingEventId])
+  @@index([investorId])
+  @@index([brandId])
+}
+
+/// ProductLaunchIngredient is the many-to-many join between product launches and ingredients.
+model ProductLaunchIngredient {
+  productLaunchId String        @db.Uuid
+  ingredientId    String        @db.Uuid
+  productLaunch   ProductLaunch @relation(fields: [productLaunchId], references: [id], onDelete: Cascade)
+  ingredient      Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  role            String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@id([productLaunchId, ingredientId])
+  @@index([productLaunchId])
+  @@index([ingredientId])
+}
+
+/// WatchlistItem is a polymorphic-style join for user tracking of brands, countries, categories, and keywords.
+model WatchlistItem {
+  id          String     @id @default(uuid()) @db.Uuid
+  watchlistId String     @db.Uuid
+  watchlist   Watchlist  @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  brandId     String?    @db.Uuid
+  brand       Brand?     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  countryId   String?    @db.Uuid
+  country     Country?   @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  categoryId  String?    @db.Uuid
+  category    Category?  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  keyword     String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([watchlistId])
+  @@index([brandId])
+  @@index([countryId])
+  @@index([categoryId])
+}
+
+/// DailyReportNews is the many-to-many join between daily reports and source articles.
+model DailyReportNews {
+  dailyReportId String      @db.Uuid
+  newsId        String      @db.Uuid
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  news          News        @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  position      Int?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@id([dailyReportId, newsId])
+  @@index([dailyReportId])
+  @@index([newsId])
+}
+
+/// WeeklyReportNews is the many-to-many join between weekly reports and source articles.
+model WeeklyReportNews {
+  weeklyReportId String       @db.Uuid
+  newsId         String       @db.Uuid
+  weeklyReport   WeeklyReport @relation(fields: [weeklyReportId], references: [id], onDelete: Cascade)
+  news           News         @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  position       Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@id([weeklyReportId, newsId])
+  @@index([weeklyReportId])
+  @@index([newsId])
+}
+
+/// MonthlyReportNews is the many-to-many join between monthly reports and source articles.
+model MonthlyReportNews {
+  monthlyReportId String        @db.Uuid
+  newsId          String        @db.Uuid
+  monthlyReport   MonthlyReport @relation(fields: [monthlyReportId], references: [id], onDelete: Cascade)
+  news            News          @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  position        Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@id([monthlyReportId, newsId])
+  @@index([monthlyReportId])
+  @@index([newsId])
+}

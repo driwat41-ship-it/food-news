@@ -1,0 +1,2 @@
+import { AdminPanel } from "../../../../features/admin/components/admin-cards";
+export default function Page(){return <div><h1 className="mb-5 text-3xl font-black">Settings</h1><AdminPanel title="Platform Settings"><p className="text-sm text-slate-500">Configure auth providers, AI models, ingestion limits, report schedules, alert channels, and feature flags via environment variables and operational runbooks.</p></AdminPanel></div>}

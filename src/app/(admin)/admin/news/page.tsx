@@ -1,0 +1,13 @@
+import Link from "next/link";
+import { AdminPanel } from "../../../../features/admin/components/admin-cards";
+import { AdminTable, Td } from "../../../../features/admin/components/admin-table";
+import { ConfirmButton } from "../../../../features/admin/components/admin-actions";
+import { approveNews, archiveNews, rejectNews } from "../../../../features/admin/actions/admin.actions";
+import { getAdminNews } from "../../../../features/admin/data/admin-loaders";
+import { PaginationControls } from "../../../../features/public/components/pagination";
+
+export default async function AdminNewsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const data = await getAdminNews(params);
+  return <div className="grid gap-5"><h1 className="text-3xl font-black">News Management</h1><form className="grid gap-3 rounded-2xl bg-white p-4 dark:bg-slate-900 md:grid-cols-6"><input name="q" placeholder="Search title/url" className="rounded-lg border p-2" /><select name="status" className="rounded-lg border p-2"><option value="">Status</option><option>INGESTED</option><option>REVIEW</option><option>PUBLISHED</option><option>REJECTED</option><option>ARCHIVED</option></select><select name="aiReviewStatus" className="rounded-lg border p-2"><option value="">AI review</option><option>pending_review</option><option>approved</option><option>rejected</option></select><input name="language" placeholder="Language" className="rounded-lg border p-2" /><input name="from" type="date" className="rounded-lg border p-2" /><button className="rounded-lg bg-emerald-600 px-4 py-2 text-white">Filter</button></form><AdminPanel title={`Articles (${data.total})`}><AdminTable headers={["Title", "Status", "AI Review", "Source", "Actions"]}>{data.items.map((item) => <tr key={item.id}><Td><Link href={`/admin/news/${item.id}`} className="font-semibold text-emerald-700">{item.title}</Link><p className="text-xs text-slate-500">{item.category?.name}</p></Td><Td>{item.status}</Td><Td>{item.aiReviewStatus}</Td><Td>{item.source?.name ?? "-"}</Td><Td><div className="flex gap-2"><ConfirmButton action={async () => { "use server"; await approveNews(item.id); }} className="bg-emerald-100 text-emerald-800">Approve</ConfirmButton><ConfirmButton action={async () => { "use server"; await rejectNews(item.id); }} className="bg-red-100 text-red-800">Reject</ConfirmButton><ConfirmButton action={async () => { "use server"; await archiveNews(item.id); }}>Archive</ConfirmButton></div></Td></tr>)}</AdminTable><PaginationControls pathname="/admin/news" page={data.page} hasNextPage={data.hasNextPage} searchParams={params} /></AdminPanel></div>;
+}
