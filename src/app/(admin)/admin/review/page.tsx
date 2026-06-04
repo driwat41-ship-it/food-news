@@ -1,0 +1,4 @@
+import Link from "next/link";
+import { StatCard } from "../../../../features/admin/components/admin-cards";
+import { getReviewOverview } from "../../../../features/admin/data/admin-loaders";
+export default async function ReviewPage(){const data=await getReviewOverview(); const cards=[["Translations",data.translations,"/admin/review/translations"],["Product launches",data.productLaunches,"/admin/review/product-launches"],["Franchise opportunities",data.franchiseOpportunities,"/admin/review/franchise-opportunities"],["Funding events",data.fundingEvents,"/admin/review/funding-events"]] as const; return <div><h1 className="text-3xl font-black">Review Center</h1><div className="mt-6 grid gap-4 md:grid-cols-4">{cards.map(([label,value,href])=><Link key={href} href={href}><StatCard label={label} value={value}/></Link>)}</div></div>}

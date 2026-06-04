@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gfbi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gfbi_password}
+      POSTGRES_DB: ${POSTGRES_DB:-gfbi}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gfbi} -d ${POSTGRES_DB:-gfbi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-postgresql://gfbi:gfbi_password@postgres:5432/gfbi?schema=public}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://gfbi:gfbi_password@postgres:5432/gfbi?schema=public}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_FALLBACK_MODEL: ${OPENAI_FALLBACK_MODEL:-gpt-4.1-nano}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-in-production}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Global Food & Beverage Intelligence}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-change-me}
+      CRON_SECRET: ${CRON_SECRET:-change-me}
+      ADMIN_BYPASS: ${ADMIN_BYPASS:-false}
+      ENABLE_WORKERS: ${ENABLE_WORKERS:-false}
+      ENABLE_CRON: ${ENABLE_CRON:-false}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    command: ["npm", "run", "start"]
+
+  worker-rss:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://gfbi:gfbi_password@postgres:5432/gfbi?schema=public}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://gfbi:gfbi_password@postgres:5432/gfbi?schema=public}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      ENABLE_WORKERS: "true"
+    command: ["npm", "run", "worker:rss"]
+
+  worker-ai:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://gfbi:gfbi_password@postgres:5432/gfbi?schema=public}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://gfbi:gfbi_password@postgres:5432/gfbi?schema=public}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_FALLBACK_MODEL: ${OPENAI_FALLBACK_MODEL:-gpt-4.1-nano}
+      AI_WORKER_CONCURRENCY: ${AI_WORKER_CONCURRENCY:-5}
+      ENABLE_WORKERS: "true"
+    command: ["npm", "run", "worker:ai"]
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      ENABLE_CRON: "true"
+      RSS_FETCH_INTERVAL_MINUTES: ${RSS_FETCH_INTERVAL_MINUTES:-5}
+    command: ["npm", "run", "scheduler:start"]
+
+volumes:
+  postgres-data:
+  redis-data:

@@ -4,20 +4,57 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "preview": "vite preview --host 0.0.0.0",
+    "vite:dev": "vite --host 0.0.0.0",
+    "vite:build": "vite build",
+    "vite:preview": "vite preview --host 0.0.0.0",
+    "rss:cron": "npm run scheduler:start",
+    "rss:worker": "npm run worker:rss",
+    "article:worker": "npm run worker:ai",
+    "ai:worker": "npm run worker:ai",
+    "worker:rss": "tsx src/jobs/rss/workers/rss.worker.ts",
+    "worker:ai": "tsx src/jobs/ai/workers/ai.worker.ts",
+    "scheduler:start": "tsx src/jobs/rss/cron/rss.cron.ts",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "prisma:validate": "prisma validate --schema=prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate deploy --schema=prisma/schema.prisma",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "health:check": "node -e \"const base=process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'; fetch(base + '/api/health').then(async (r) => { console.log(r.status, await r.text()); process.exit(r.ok ? 0 : 1); }).catch((error) => { console.error(error); process.exit(1); })\"",
+    "next:dev": "next dev",
+    "next:build": "next build",
+    "next:start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test:seo": "node --test tests/search-seo.test.mjs",
+    "test:seed": "node --test tests/seeding.test.mjs",
+    "test:deployment": "node --test tests/deployment.test.mjs",
+    "test:readiness": "node --test tests/production-readiness.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
     "vite": "^7.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.468.0"
+    "lucide-react": "^0.468.0",
+    "@prisma/client": "^6.0.0",
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.0.0",
+    "next": "^15.0.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "prisma": "^6.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
   }
 }
