@@ -1,6 +1,7 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../services/database/prisma";
 import { getPagination } from "../lib/pagination";
-import type { PaginatedResult, PublicBrandCard, PublicCategoryCard, PublicCountryCard, PublicNewsCard, PublicReportCard } from "../types";
+import type { PaginatedResult, PublicBrandCard, PublicBriefEntitySignal, PublicBriefEvent, PublicBriefSignal, PublicCategoryCard, PublicCountryCard, PublicDailyBrief, PublicNewsCard, PublicReportCard } from "../types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -37,6 +38,215 @@ const newsInclude = {
   countryMentions: { include: { country: true }, take: 3 },
   tags: { include: { tag: true }, take: 8 },
 } as const;
+
+const briefProcessedNewsWhere: Prisma.NewsWhereInput = {
+  status: { in: ["PUBLISHED", "REVIEW", "INGESTED"] },
+  duplicateOfId: null,
+  aiProcessedAt: { not: null },
+};
+
+function signalScore(news: any) {
+  const quality = Number(news.qualityScore ?? 0);
+  const relevance = Number(news.relevanceScore ?? 0);
+  const confidence = Number(news.aiConfidenceScore ?? 0);
+  return Math.round(Math.max(quality, relevance, confidence) * 100);
+}
+
+function mapBriefSignal(news: any, signalType: PublicBriefSignal["signalType"] = "news"): PublicBriefSignal {
+  const card = mapNews(news);
+  return {
+    ...card,
+    score: signalScore(news),
+    confidence: news.aiConfidenceScore,
+    signalType,
+  };
+}
+
+function sourceHref(news?: { slug?: string | null } | null) {
+  return news?.slug ? `/news/${news.slug}` : null;
+}
+
+function formatMoney(amount?: unknown, currency?: string | null) {
+  if (!amount) return null;
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return null;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency ?? "USD",
+    maximumFractionDigits: value >= 1_000_000 ? 0 : 2,
+    notation: value >= 1_000_000 ? "compact" : "standard",
+  }).format(value);
+}
+
+function briefEntityScore(count: number, confidence?: number | null) {
+  return Math.round(count * 10 + Number(confidence ?? 0) * 100);
+}
+
+function buildExecutiveSummary(input: {
+  processedNewsCount: number;
+  topSignals: PublicBriefSignal[];
+  expansionSignals: PublicBriefEvent[];
+  fundingAndMna: PublicBriefEvent[];
+  productLaunches: PublicBriefEvent[];
+  brandsToWatch: PublicBriefEntitySignal[];
+  countriesToWatch: PublicBriefEntitySignal[];
+}) {
+  const topSignal = input.topSignals[0];
+  const topBrand = input.brandsToWatch[0];
+  const topCountry = input.countriesToWatch[0];
+  const lines = [
+    input.processedNewsCount
+      ? `${input.processedNewsCount} AI-processed articles are contributing to today's brief, ranked by quality, relevance, and extraction confidence.`
+      : "No AI-processed articles are available for today's brief yet.",
+  ];
+  if (topSignal) lines.push(`The strongest signal is "${topSignal.title}"${topSignal.category ? ` in ${topSignal.category}` : ""}, with a ${topSignal.score || "quality"} signal score.`);
+  if (input.expansionSignals.length || input.fundingAndMna.length || input.productLaunches.length) {
+    lines.push(`${input.expansionSignals.length} expansion signals, ${input.fundingAndMna.length} funding or M&A signals, and ${input.productLaunches.length} product launch signals need analyst attention.`);
+  }
+  if (topBrand || topCountry) {
+    lines.push(`${topBrand ? `${topBrand.name} is the leading brand to watch` : "Brand watch data is pending"}${topCountry ? `, while ${topCountry.name} is the most active country signal` : ""}.`);
+  }
+  return lines;
+}
+
+export async function getDailyBriefData(): Promise<PublicDailyBrief> {
+  const [topNews, expansionSignals, fundingEvents, productLaunches, brandGroups, countryGroups, processedNewsCount] = await Promise.all([
+    prisma.news.findMany({
+      where: briefProcessedNewsWhere,
+      include: newsInclude,
+      orderBy: [{ qualityScore: "desc" }, { relevanceScore: "desc" }, { aiConfidenceScore: "desc" }, { publishedAt: "desc" }],
+      take: 8,
+    }),
+    prisma.storeExpansion.findMany({
+      where: { news: briefProcessedNewsWhere },
+      include: { brand: true, country: true, news: { include: newsInclude } },
+      orderBy: [{ announcedAt: "desc" }, { createdAt: "desc" }],
+      take: 6,
+    }),
+    prisma.fundingEvent.findMany({
+      where: { news: briefProcessedNewsWhere },
+      include: { brand: true, country: true, news: { include: newsInclude } },
+      orderBy: [{ announcedAt: "desc" }, { createdAt: "desc" }],
+      take: 6,
+    }),
+    prisma.productLaunch.findMany({
+      where: { news: briefProcessedNewsWhere },
+      include: { brand: true, country: true, category: true, news: { include: newsInclude } },
+      orderBy: [{ launchDate: "desc" }, { createdAt: "desc" }],
+      take: 6,
+    }),
+    prisma.brandMention.groupBy({
+      by: ["brandId"],
+      where: { news: briefProcessedNewsWhere },
+      _count: { brandId: true },
+      _avg: { confidence: true },
+      orderBy: { _count: { brandId: "desc" } },
+      take: 6,
+    }),
+    prisma.countryMention.groupBy({
+      by: ["countryId"],
+      where: { news: briefProcessedNewsWhere },
+      _count: { countryId: true },
+      _avg: { confidence: true },
+      orderBy: { _count: { countryId: "desc" } },
+      take: 6,
+    }),
+    prisma.news.count({ where: briefProcessedNewsWhere }),
+  ]);
+
+  const [brands, countries] = await Promise.all([
+    prisma.brand.findMany({
+      where: { id: { in: brandGroups.map((group) => group.brandId) } },
+      include: { mentions: { where: { news: briefProcessedNewsWhere }, include: { news: { include: newsInclude } }, orderBy: { createdAt: "desc" }, take: 1 } },
+    }),
+    prisma.country.findMany({
+      where: { id: { in: countryGroups.map((group) => group.countryId) } },
+      include: { mentions: { where: { news: briefProcessedNewsWhere }, include: { news: { include: newsInclude } }, orderBy: { createdAt: "desc" }, take: 1 } },
+    }),
+  ]);
+
+  const brandById = new Map(brands.map((brand) => [brand.id, brand]));
+  const countryById = new Map(countries.map((country) => [country.id, country]));
+  const topSignals = topNews.map((news) => mapBriefSignal(news));
+
+  const brief: PublicDailyBrief = {
+    generatedAt: new Date(),
+    processedNewsCount,
+    executiveSummary: [],
+    topSignals,
+    expansionSignals: expansionSignals.map((signal) => ({
+      id: signal.id,
+      title: signal.title,
+      summary: signal.news?.aiSummary ?? signal.news?.excerpt ?? `${signal.expansionType}${signal.city ? ` in ${signal.city}` : ""}`,
+      brand: signal.brand?.name,
+      country: signal.country?.name,
+      href: sourceHref(signal.news),
+      date: signal.announcedAt ?? signal.openedAt ?? signal.createdAt,
+      amountLabel: signal.storeCount ? `${signal.storeCount} stores` : signal.expansionType,
+      score: signal.news ? signalScore(signal.news) : 0,
+    })),
+    fundingAndMna: fundingEvents.map((event) => ({
+      id: event.id,
+      title: event.title,
+      summary: event.summary ?? event.news?.aiSummary ?? event.news?.excerpt,
+      brand: event.brand?.name,
+      country: event.country?.name,
+      href: sourceHref(event.news),
+      date: event.announcedAt ?? event.createdAt,
+      amountLabel: formatMoney(event.amount, event.currency) ?? event.eventType,
+      score: event.news ? signalScore(event.news) : 0,
+    })),
+    productLaunches: productLaunches.map((launch) => ({
+      id: launch.id,
+      title: launch.title,
+      summary: launch.description ?? launch.news?.aiSummary ?? launch.news?.excerpt,
+      brand: launch.brand?.name,
+      country: launch.country?.name,
+      category: launch.category?.name,
+      href: sourceHref(launch.news),
+      date: launch.launchDate ?? launch.createdAt,
+      amountLabel: launch.industryType ?? launch.category?.industryType ?? null,
+      score: launch.news ? signalScore(launch.news) : 0,
+    })),
+    brandsToWatch: brandGroups
+      .map((group) => {
+        const brand = brandById.get(group.brandId);
+        if (!brand) return null;
+        return {
+          id: brand.id,
+          slug: brand.slug,
+          name: brand.name,
+          description: brand.description,
+          context: brand.industryType,
+          count: group._count.brandId,
+          score: briefEntityScore(group._count.brandId, group._avg.confidence),
+          href: `/brands/${brand.slug}`,
+          latestSignal: brand.mentions[0]?.news ? mapBriefSignal(brand.mentions[0].news) : null,
+        };
+      })
+      .filter(Boolean) as PublicBriefEntitySignal[],
+    countriesToWatch: countryGroups
+      .map((group) => {
+        const country = countryById.get(group.countryId);
+        if (!country) return null;
+        return {
+          id: country.id,
+          slug: country.slug,
+          name: country.name,
+          description: country.region,
+          context: country.subregion,
+          count: group._count.countryId,
+          score: briefEntityScore(group._count.countryId, group._avg.confidence),
+          href: `/countries/${country.slug}`,
+          latestSignal: country.mentions[0]?.news ? mapBriefSignal(country.mentions[0].news) : null,
+        };
+      })
+      .filter(Boolean) as PublicBriefEntitySignal[],
+  };
+
+  brief.executiveSummary = buildExecutiveSummary(brief);
+  return brief;
+}
 
 export async function getHomepageData() {
   const [latestNews, brands, countries, categories, reports] = await Promise.all([

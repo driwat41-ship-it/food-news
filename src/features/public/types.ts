@@ -49,6 +49,59 @@ export interface PublicReportCard {
   publishedAt?: Date | null;
 }
 
+export interface PublicBriefSignal {
+  id: string;
+  slug: string;
+  title: string;
+  summary?: string | null;
+  source?: string | null;
+  category?: string | null;
+  country?: string | null;
+  brands: string[];
+  tags: string[];
+  publishedAt?: Date | null;
+  score: number;
+  confidence?: number | null;
+  signalType: "news" | "expansion" | "funding" | "launch";
+}
+
+export interface PublicBriefEvent {
+  id: string;
+  title: string;
+  summary?: string | null;
+  brand?: string | null;
+  country?: string | null;
+  category?: string | null;
+  href?: string | null;
+  date?: Date | null;
+  amountLabel?: string | null;
+  score: number;
+}
+
+export interface PublicBriefEntitySignal {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  context?: string | null;
+  count: number;
+  score: number;
+  href: string;
+  latestSignal?: PublicBriefSignal | null;
+}
+
+export interface PublicDailyBrief {
+  generatedAt: Date;
+  processedNewsCount: number;
+  executiveSummary: string[];
+  topSignals: PublicBriefSignal[];
+  expansionSignals: PublicBriefEvent[];
+  fundingAndMna: PublicBriefEvent[];
+  productLaunches: PublicBriefEvent[];
+  brandsToWatch: PublicBriefEntitySignal[];
+  countriesToWatch: PublicBriefEntitySignal[];
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   page: number;

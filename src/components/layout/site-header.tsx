@@ -3,6 +3,7 @@ import { SearchBar } from "../../features/public/components/search-bar";
 import { LanguageSwitcher } from "../../features/public/components/language-switcher";
 
 const nav = [
+  ["Brief", "/brief"],
   ["News", "/news"],
   ["Brands", "/brands"],
   ["Countries", "/countries"],
