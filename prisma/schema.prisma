@@ -216,7 +216,7 @@ model News {
   @@index([duplicateOfId])
   @@index([contentHash])
   @@index([searchVector], type: Gin)
-  @@index([embedding], type: Hnsw)
+  // @@index([embedding], type: Hnsw) // Disabled for local Prisma compatibility
 }
 
 /// NewsTranslation stores localized titles, slugs, metadata, summaries, and bodies for multilingual SEO.

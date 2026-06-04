@@ -1,3 +1,4 @@
+import { Language, Prisma, type Language as PrismaLanguage } from "@prisma/client";
 import type { SearchFilters, SearchSort, SearchType } from "../types";
 
 const allowedTypes = new Set<SearchType>(["all", "news", "brands", "countries", "categories", "reports"]);
@@ -27,12 +28,22 @@ export function getOffset(filters: Pick<SearchFilters, "page" | "limit">) {
   return (filters.page - 1) * filters.limit;
 }
 
-export function buildNewsWhere(filters: SearchFilters) {
+function isLanguage(value: string | undefined): value is PrismaLanguage {
+  return Object.values(Language).some((language) => language === value);
+}
+
+function toLanguage(value: string | undefined): PrismaLanguage | undefined {
+  return isLanguage(value) ? value : undefined;
+}
+
+export function buildNewsWhere(filters: SearchFilters): Prisma.NewsWhereInput {
+  const insensitive = Prisma.QueryMode.insensitive;
+
   return {
     status: { in: ["PUBLISHED", "REVIEW", "INGESTED"] },
     category: filters.category ? { slug: filters.category } : undefined,
     primaryCountry: filters.country ? { slug: filters.country } : undefined,
-    language: filters.language || undefined,
+    language: toLanguage(filters.language),
     brandMentions: filters.brand ? { some: { brand: { slug: filters.brand } } } : undefined,
     publishedAt: {
       gte: filters.dateFrom ? new Date(filters.dateFrom) : undefined,
@@ -40,10 +51,10 @@ export function buildNewsWhere(filters: SearchFilters) {
     },
     OR: filters.q
       ? [
-          { title: { contains: filters.q, mode: "insensitive" } },
-          { excerpt: { contains: filters.q, mode: "insensitive" } },
-          { aiSummary: { contains: filters.q, mode: "insensitive" } },
-          { translations: { some: { title: { contains: filters.q, mode: "insensitive" } } } },
+          { title: { contains: filters.q, mode: insensitive } },
+          { excerpt: { contains: filters.q, mode: insensitive } },
+          { aiSummary: { contains: filters.q, mode: insensitive } },
+          { translations: { some: { title: { contains: filters.q, mode: insensitive } } } },
         ]
       : undefined,
   };

@@ -1,5 +1,4 @@
-import { Queue, QueueEvents } from "bullmq";
-import IORedis from "ioredis";
+import { Queue, QueueEvents, type ConnectionOptions } from "bullmq";
 import { rssConfig } from "../config/rss.config";
 import type { AiProcessingJob, ProcessArticleJob, QueueArticleJob } from "../types";
 
@@ -16,12 +15,36 @@ export const QUEUE_JOB_NAMES = {
   processAi: "process-ai",
 } as const;
 
-export const redisConnection = new IORedis(rssConfig.redisUrl, {
+type RssIngestionJobName =
+  | typeof QUEUE_JOB_NAMES.fetchActiveFeeds
+  | typeof QUEUE_JOB_NAMES.refreshFailedFeeds
+  | typeof QUEUE_JOB_NAMES.cleanupOldLogs;
+
+type RssProcessingJobName =
+  | typeof QUEUE_JOB_NAMES.processSource
+  | typeof QUEUE_JOB_NAMES.processArticle;
+
+type AiProcessingJobName = typeof QUEUE_JOB_NAMES.processAi;
+
+type RssIngestionJobData = {
+  triggeredBy?: string;
+  requestedAt?: string;
+};
+
+export const redisConnection = {
+  url: rssConfig.redisUrl,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
-});
+} satisfies ConnectionOptions;
 
-export const rssIngestionQueue = new Queue<Partial<QueueArticleJob>>(RSS_INGESTION_QUEUE, {
+export const rssIngestionQueue = new Queue<
+  RssIngestionJobData,
+  unknown,
+  RssIngestionJobName,
+  RssIngestionJobData,
+  unknown,
+  RssIngestionJobName
+>(RSS_INGESTION_QUEUE, {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,
@@ -31,7 +54,14 @@ export const rssIngestionQueue = new Queue<Partial<QueueArticleJob>>(RSS_INGESTI
   },
 });
 
-export const rssProcessingQueue = new Queue<QueueArticleJob | ProcessArticleJob>(RSS_PROCESSING_QUEUE, {
+export const rssProcessingQueue = new Queue<
+  QueueArticleJob | ProcessArticleJob,
+  unknown,
+  RssProcessingJobName,
+  QueueArticleJob | ProcessArticleJob,
+  unknown,
+  RssProcessingJobName
+>(RSS_PROCESSING_QUEUE, {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 5,
@@ -41,7 +71,14 @@ export const rssProcessingQueue = new Queue<QueueArticleJob | ProcessArticleJob>
   },
 });
 
-export const aiProcessingQueue = new Queue<AiProcessingJob>(AI_PROCESSING_QUEUE, {
+export const aiProcessingQueue = new Queue<
+  AiProcessingJob,
+  unknown,
+  AiProcessingJobName,
+  AiProcessingJob,
+  unknown,
+  AiProcessingJobName
+>(AI_PROCESSING_QUEUE, {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,

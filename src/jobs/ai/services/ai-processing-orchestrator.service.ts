@@ -1,9 +1,9 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../../../services/database/prisma";
 import { logger } from "../../../lib/logger/structured-logger";
 import { aiConfig } from "../config/ai.config";
 import { buildArticleAnalysisPrompt } from "../prompts/article-analysis.prompt";
-import type { AIArticleAnalysisResult, AIProcessingJobPayload } from "../types";
+import type { AIArticleAnalysisResult, AIProcessingJobPayload, FranchiseOpportunityCandidate, FundingEventCandidate, MentionCandidate, ProductLaunchCandidate } from "../types";
 import { clampConfidence } from "../utils/json";
 import { aiClientService, AIClientService } from "./ai-client.service";
 import { classificationService, ClassificationService } from "./classification.service";
@@ -16,6 +16,76 @@ import { productLaunchDetectorService, ProductLaunchDetectorService } from "./pr
 import { summaryService, SummaryService } from "./summary.service";
 import { taggingService, TaggingService } from "./tagging.service";
 import { translationService, TranslationService } from "./translation.service";
+
+function compactJsonObject(entries: Array<[string, Prisma.InputJsonValue | undefined]>): Prisma.InputJsonObject {
+  const json: Record<string, Prisma.InputJsonValue> = {};
+
+  for (const [key, value] of entries) {
+    if (value !== undefined) {
+      json[key] = value;
+    }
+  }
+
+  return json;
+}
+
+function mentionToJson(mention: MentionCandidate): Prisma.InputJsonObject {
+  return compactJsonObject([
+    ["name", mention.name],
+    ["confidence", mention.confidence],
+    ["evidence", mention.evidence],
+  ]);
+}
+
+function productLaunchToJson(launch: ProductLaunchCandidate): Prisma.InputJsonObject {
+  return compactJsonObject([
+    ["title", launch.title],
+    ["description", launch.description],
+    ["brandName", launch.brandName],
+    ["countryName", launch.countryName],
+    ["launchDate", launch.launchDate],
+    ["confidence", launch.confidence],
+  ]);
+}
+
+function franchiseOpportunityToJson(opportunity: FranchiseOpportunityCandidate): Prisma.InputJsonObject {
+  return compactJsonObject([
+    ["title", opportunity.title],
+    ["description", opportunity.description],
+    ["brandName", opportunity.brandName],
+    ["countryName", opportunity.countryName],
+    ["investmentMin", opportunity.investmentMin],
+    ["investmentMax", opportunity.investmentMax],
+    ["currency", opportunity.currency],
+    ["confidence", opportunity.confidence],
+  ]);
+}
+
+function fundingEventToJson(event: FundingEventCandidate): Prisma.InputJsonObject {
+  return compactJsonObject([
+    ["title", event.title],
+    ["eventType", event.eventType],
+    ["brandName", event.brandName],
+    ["countryName", event.countryName],
+    ["amount", event.amount],
+    ["currency", event.currency],
+    ["announcedAt", event.announcedAt],
+    ["investors", event.investors],
+    ["confidence", event.confidence],
+  ]);
+}
+
+function aiEntitiesToJsonObject(result: AIArticleAnalysisResult, summaries: ReturnType<SummaryService["normalize"]>): Prisma.InputJsonObject {
+  return {
+    brandMentions: result.brandMentions.map(mentionToJson),
+    countryMentions: result.countryMentions.map(mentionToJson),
+    keyTakeawaysEn: summaries.keyTakeawaysEn,
+    keyTakeawaysZh: summaries.keyTakeawaysZh,
+    productLaunches: result.productLaunches.map(productLaunchToJson),
+    franchiseOpportunities: result.franchiseOpportunities.map(franchiseOpportunityToJson),
+    fundingEvents: result.fundingEvents.map(fundingEventToJson),
+  };
+}
 
 export class AIProcessingOrchestratorService {
   constructor(
@@ -99,15 +169,7 @@ export class AIProcessingOrchestratorService {
             aiSummaryModel: completion.model,
             aiSummaryGeneratedAt: new Date(),
             aiKeywords: result.tags,
-            aiEntities: {
-              brandMentions: result.brandMentions,
-              countryMentions: result.countryMentions,
-              keyTakeawaysEn: summaries.keyTakeawaysEn,
-              keyTakeawaysZh: summaries.keyTakeawaysZh,
-              productLaunches: result.productLaunches,
-              franchiseOpportunities: result.franchiseOpportunities,
-              fundingEvents: result.fundingEvents,
-            },
+            aiEntities: aiEntitiesToJsonObject(result, summaries),
             aiConfidenceScore: result.confidenceScore,
             aiReviewStatus: "pending_review",
             aiProcessedAt: new Date(),

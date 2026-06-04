@@ -1,7 +1,55 @@
-import type { JobStatus, PrismaClient } from "@prisma/client";
+import type { JobStatus, Prisma, PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../../../services/database/prisma";
 import { logger } from "../../../lib/logger/structured-logger";
 import type { RssMetrics } from "../types";
+
+type JsonValueOrNull = Prisma.InputJsonValue | null;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Date);
+}
+
+function toJsonValue(value: unknown): JsonValueOrNull | undefined {
+  if (value === undefined || typeof value === "function" || typeof value === "symbol") {
+    return undefined;
+  }
+
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => toJsonValue(item) ?? null);
+  }
+
+  if (isRecord(value)) {
+    return toJsonObject(value);
+  }
+
+  return undefined;
+}
+
+function toJsonObject(value: Record<string, unknown> | undefined): Prisma.InputJsonObject {
+  const json: Record<string, JsonValueOrNull> = {};
+
+  for (const [key, entryValue] of Object.entries(value ?? {})) {
+    const jsonValue = toJsonValue(entryValue);
+
+    if (jsonValue !== undefined) {
+      json[key] = jsonValue;
+    }
+  }
+
+  return json;
+}
 
 export class RssMonitoringService {
   constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
@@ -12,14 +60,16 @@ export class RssMonitoringService {
     sourceId?: string;
     payload?: Record<string, unknown>;
   }): Promise<string> {
+    const payload = toJsonObject(input.payload);
+
     const job = await this.prisma.systemJob.upsert({
       where: { key: input.jobKey },
-      update: { status: "RUNNING", payload: input.payload ?? {} },
+      update: { status: "RUNNING", payload },
       create: {
         key: input.jobKey,
         name: input.jobName,
         status: "RUNNING",
-        payload: input.payload ?? {},
+        payload,
       },
     });
 
@@ -29,7 +79,7 @@ export class RssMonitoringService {
         sourceId: input.sourceId,
         status: "RUNNING",
         startedAt: new Date(),
-        metadata: input.payload ?? {},
+        metadata: payload,
       },
     });
 
@@ -45,6 +95,7 @@ export class RssMonitoringService {
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     const finishedAt = new Date();
+    const metadata = toJsonObject(input.metadata);
     const existing = await this.prisma.jobExecution.findUnique({
       where: { id: input.executionId },
       select: { startedAt: true, jobId: true },
@@ -62,7 +113,7 @@ export class RssMonitoringService {
         recordsWritten: input.recordsWritten ?? 0,
         errorMessage: input.error instanceof Error ? input.error.message : input.error ? String(input.error) : null,
         errorStack: input.error instanceof Error ? input.error.stack : null,
-        metadata: input.metadata ?? {},
+        metadata,
       },
     });
 

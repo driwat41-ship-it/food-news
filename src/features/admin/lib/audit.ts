@@ -8,8 +8,10 @@ export async function writeAuditLog(input: {
   actorId?: string;
   before?: unknown;
   after?: unknown;
-  metadata?: Record<string, unknown>;
+  metadata?: Prisma.InputJsonObject;
 }, db: PrismaClient | Prisma.TransactionClient = defaultPrisma) {
+  const metadata: Prisma.InputJsonObject = input.metadata ?? {};
+
   await db.auditLog.create({
     data: {
       action: input.action,
@@ -18,7 +20,7 @@ export async function writeAuditLog(input: {
       actorId: input.actorId && input.actorId !== "system" ? input.actorId : undefined,
       before: input.before as Prisma.InputJsonValue,
       after: input.after as Prisma.InputJsonValue,
-      metadata: input.metadata ?? {},
+      metadata,
     },
   });
 }

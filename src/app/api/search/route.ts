@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "../../../services/database/prisma";
@@ -9,7 +10,8 @@ function newsToResult(news: any): SearchResultItem {
   return { id: news.id, type: "news", title: news.translations?.[0]?.title ?? news.title, slug: news.slug, description: news.aiSummary ?? news.excerpt, url: `/news/${news.slug}`, publishedAt: news.publishedAt, meta: { source: news.source?.name, category: news.category?.name } };
 }
 const simpleResult = (type: SearchResultItem["type"], item: any): SearchResultItem => ({ id: item.id, type, title: item.title ?? item.name, slug: item.slug, description: item.summary ?? item.description ?? item.region, url: `/${type}/${item.slug}`, publishedAt: item.publishedAt ?? item.updatedAt, meta: { industryType: item.industryType } });
-const reportWhere = (q: string) => q ? { OR: [{ title: { contains: q, mode: "insensitive" as const } }, { summary: { contains: q, mode: "insensitive" as const } }] } : {};
+const insensitive = Prisma.QueryMode.insensitive;
+const reportWhere = (q: string) => q ? { OR: [{ title: { contains: q, mode: insensitive } }, { summary: { contains: q, mode: insensitive } }] } : {};
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -44,15 +46,15 @@ export async function GET(request: Request) {
   }
 
   if (filters.type === "all" || filters.type === "brands") {
-    const brands = await prisma.brand.findMany({ where: q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }] } : {}, orderBy: { updatedAt: "desc" }, skip: filters.type === "brands" ? offset : 0, take: filters.type === "brands" ? filters.limit : 6 });
+    const brands = await prisma.brand.findMany({ where: q ? { OR: [{ name: { contains: q, mode: insensitive } }, { description: { contains: q, mode: insensitive } }] } : {}, orderBy: { updatedAt: "desc" }, skip: filters.type === "brands" ? offset : 0, take: filters.type === "brands" ? filters.limit : 6 });
     results.push(...brands.map((item) => simpleResult("brands", item)));
   }
   if (filters.type === "all" || filters.type === "countries") {
-    const countries = await prisma.country.findMany({ where: q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { region: { contains: q, mode: "insensitive" } }] } : {}, orderBy: { name: "asc" }, skip: filters.type === "countries" ? offset : 0, take: filters.type === "countries" ? filters.limit : 6 });
+    const countries = await prisma.country.findMany({ where: q ? { OR: [{ name: { contains: q, mode: insensitive } }, { region: { contains: q, mode: insensitive } }] } : {}, orderBy: { name: "asc" }, skip: filters.type === "countries" ? offset : 0, take: filters.type === "countries" ? filters.limit : 6 });
     results.push(...countries.map((item) => simpleResult("countries", item)));
   }
   if (filters.type === "all" || filters.type === "categories") {
-    const categories = await prisma.category.findMany({ where: q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }] } : {}, orderBy: { name: "asc" }, skip: filters.type === "categories" ? offset : 0, take: filters.type === "categories" ? filters.limit : 6 });
+    const categories = await prisma.category.findMany({ where: q ? { OR: [{ name: { contains: q, mode: insensitive } }, { description: { contains: q, mode: insensitive } }] } : {}, orderBy: { name: "asc" }, skip: filters.type === "categories" ? offset : 0, take: filters.type === "categories" ? filters.limit : 6 });
     results.push(...categories.map((item) => simpleResult("categories", item)));
   }
   if (filters.type === "all" || filters.type === "reports") {
