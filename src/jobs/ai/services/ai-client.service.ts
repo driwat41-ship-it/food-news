@@ -73,7 +73,9 @@ export class AIClientService {
             },
             { role: "user", content: prompt },
           ],
-          response_format: { type: "json_object" },
+          text: {
+            format: { type: "json_object" },
+          },
         }),
       });
 
