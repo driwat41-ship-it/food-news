@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeJobId } from "../../../../../jobs/rss/queues/job-ids";
 import { QUEUE_JOB_NAMES, rssIngestionQueue } from "../../../../../jobs/rss/queues/rss.queues";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   const job = await rssIngestionQueue.add(
     QUEUE_JOB_NAMES.fetchActiveFeeds,
     { triggeredBy: "internal-cron", requestedAt: new Date().toISOString() },
-    { jobId: `internal-cron:rss:${Date.now()}` },
+    { jobId: safeJobId(["internal-cron", "rss", Date.now()]) },
   );
 
   return NextResponse.json({ status: "queued", queue: "rss-ingestion", jobName: QUEUE_JOB_NAMES.fetchActiveFeeds, jobId: job.id, timestamp: new Date().toISOString() });

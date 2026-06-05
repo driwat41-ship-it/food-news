@@ -1,5 +1,6 @@
 import { logger } from "../../../lib/logger/structured-logger";
 import { rssConfig } from "../config/rss.config";
+import { safeJobId } from "../queues/job-ids";
 import { QUEUE_JOB_NAMES, rssIngestionQueue } from "../queues/rss.queues";
 
 export async function registerRssCronJobs(): Promise<void> {
@@ -8,7 +9,7 @@ export async function registerRssCronJobs(): Promise<void> {
       QUEUE_JOB_NAMES.fetchActiveFeeds,
       {},
       {
-        jobId: "cron:rss:fetch-active-feeds",
+        jobId: safeJobId(["cron", "rss", "fetch-active-feeds"]),
         repeat: { every: rssConfig.fetchIntervalMinutes * 60_000 },
       },
     ),
@@ -16,7 +17,7 @@ export async function registerRssCronJobs(): Promise<void> {
       QUEUE_JOB_NAMES.refreshFailedFeeds,
       {},
       {
-        jobId: "cron:rss:refresh-failed-feeds",
+        jobId: safeJobId(["cron", "rss", "refresh-failed-feeds"]),
         repeat: { every: 60 * 60_000 },
       },
     ),
@@ -24,7 +25,7 @@ export async function registerRssCronJobs(): Promise<void> {
       QUEUE_JOB_NAMES.cleanupOldLogs,
       {},
       {
-        jobId: "cron:rss:cleanup-old-logs",
+        jobId: safeJobId(["cron", "rss", "cleanup-old-logs"]),
         repeat: { pattern: "0 3 * * *" },
       },
     ),

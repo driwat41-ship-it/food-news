@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../../../services/database/prisma";
 import { logger } from "../../../lib/logger/structured-logger";
 import { aiProcessingQueue, QUEUE_JOB_NAMES, rssProcessingQueue } from "../queues/rss.queues";
+import { safeJobId } from "../queues/job-ids";
 import type { AiProcessingJob, NormalizedArticleInput, ProcessArticleJob, RssSourceRecord } from "../types";
 import { deduplicationService, DeduplicationService } from "./deduplication.service";
 import { feedParserService, FeedParserService } from "./feed-parser.service";
@@ -31,7 +32,7 @@ export class ArticlePipelineService {
           rssProcessingQueue.add(
             QUEUE_JOB_NAMES.processSource,
             { sourceId: source.id },
-            { jobId: `rss-source:${source.id}:${Math.floor(Date.now() / 300_000)}` },
+            { jobId: safeJobId(["rss-source", source.id, Math.floor(Date.now() / 300_000)]) },
           ),
         ),
       );
@@ -52,7 +53,7 @@ export class ArticlePipelineService {
         rssProcessingQueue.add(
           QUEUE_JOB_NAMES.processSource,
           { sourceId: source.id, force: true },
-          { jobId: `rss-failed-source:${source.id}:${Math.floor(Date.now() / 3_600_000)}` },
+          { jobId: safeJobId(["rss-failed-source", source.id, Math.floor(Date.now() / 3_600_000)]) },
         ),
       ),
     );
@@ -96,7 +97,7 @@ export class ArticlePipelineService {
           rssProcessingQueue.add(
             QUEUE_JOB_NAMES.processArticle,
             { article, sourceId: source.id } satisfies ProcessArticleJob,
-            { jobId: `rss-article:${article.urlHash}` },
+            { jobId: safeJobId(["rss-article", article.urlHash]) },
           ),
         ),
       );
@@ -152,7 +153,8 @@ export class ArticlePipelineService {
   }
 
   async processArticle(job: ProcessArticleJob): Promise<{ newsId?: string; duplicate: boolean }> {
-    const duplicate = await this.deduplicator.detectDuplicate(job.article);
+    const article = this.normalizeQueuedArticle(job.article);
+    const duplicate = await this.deduplicator.detectDuplicate(article);
 
     if (duplicate.isDuplicate) {
       logger.info("RSS article skipped as duplicate", {
@@ -160,7 +162,7 @@ export class ArticlePipelineService {
         duplicateNewsId: duplicate.duplicateNewsId,
         reason: duplicate.reason,
         score: duplicate.score,
-        url: job.article.url,
+        url: article.url,
       });
 
       return { newsId: duplicate.duplicateNewsId, duplicate: true };
@@ -169,21 +171,21 @@ export class ArticlePipelineService {
     const news = await this.prisma.news.create({
       data: {
         sourceId: job.sourceId,
-        categoryId: job.article.categoryId,
-        primaryCountryId: job.article.countryId,
-        title: job.article.title,
-        slug: job.article.slug,
-        originalUrl: job.article.url,
-        canonicalUrl: job.article.url,
-        urlHash: job.article.urlHash,
-        contentHash: job.article.contentHash,
-        excerpt: job.article.description,
-        body: job.article.content,
-        author: job.article.author,
-        imageUrl: job.article.image,
-        language: job.article.language,
-        industryType: job.article.industryType,
-        publishedAt: job.article.publishedAt,
+        categoryId: article.categoryId,
+        primaryCountryId: article.countryId,
+        title: article.title,
+        slug: article.slug,
+        originalUrl: article.url,
+        canonicalUrl: article.url,
+        urlHash: article.urlHash,
+        contentHash: article.contentHash,
+        excerpt: article.description,
+        body: article.content,
+        author: article.author,
+        imageUrl: article.image,
+        language: article.language,
+        industryType: article.industryType,
+        publishedAt: article.publishedAt,
         status: "INGESTED",
       },
       select: { id: true },
@@ -195,10 +197,17 @@ export class ArticlePipelineService {
         newsId: news.id,
         taskTypes: ["summarize", "classify", "extract_entities", "translate"],
       } satisfies AiProcessingJob,
-      { jobId: `ai-processing:${news.id}` },
+      { jobId: safeJobId(["ai-processing", news.id]) },
     );
 
     return { newsId: news.id, duplicate: false };
+  }
+
+  private normalizeQueuedArticle(article: NormalizedArticleInput): NormalizedArticleInput {
+    return {
+      ...article,
+      publishedAt: article.publishedAt ? new Date(article.publishedAt) : undefined,
+    };
   }
 
   async cleanupOldLogs(olderThan: Date): Promise<number> {
